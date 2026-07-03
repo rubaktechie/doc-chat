@@ -1,0 +1,6 @@
+node_modules
+python/.venv
+data
+.env
+npm-debug.log
+test

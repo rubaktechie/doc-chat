@@ -1,0 +1,40 @@
+# Runs the app (backend + frontend). LLM/embedding providers are EXTERNAL and
+# injected via an env file — nothing model-related runs in compose.
+#
+#   cp .env.docker.example .env.docker     # then fill in OPENAI_API_KEY etc.
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# All provider config (OPENAI_API_KEY, LOCAL_BASE_URL, models, JWT_SECRET, ...)
+# is read from ./.env.docker and passed straight into the backend container.
+# For local models, run Ollama on the host and set LOCAL_BASE_URL to
+# http://host.docker.internal:11434/v1, then pick "local" in Settings.
+
+services:
+  backend:
+    build: ./backend
+    # Provider + app config comes from this file (see .env.docker.example).
+    env_file:
+      - path: ./.env.docker
+        required: false
+    environment:
+      # Pinned for the container regardless of the env file (must match the
+      # volume mount and the venv created in the image).
+      DATA_DIR: /data
+      PYTHON_BIN: /app/python/.venv/bin/python
+    volumes:
+      # DB, FAISS indexes, and uploads persist on the HOST filesystem.
+      # DATA_HOST_DIR is read from the shell or a root .env at compose time.
+      - ${DATA_HOST_DIR:-./data}:/data
+    # Lets the container reach a host-run Ollama on Linux (no-op on Docker Desktop).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

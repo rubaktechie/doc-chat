@@ -182,3 +182,20 @@ test('delete removes the document and its vectors', async () => {
   const { citations } = await chat(tokenA, 'When did Apollo 11 land on the Moon?');
   assert.equal(citations.length, 0);
 });
+
+test('concurrent uploads do not lose vectors (per-user queue)', async () => {
+  // Both ingests race to rewrite the same FAISS index; without per-user
+  // serialization the second write clobbers the first and one document's
+  // vectors silently vanish while its DB rows say "ready".
+  const [a, b] = await Promise.all([
+    upload(tokenA, 'sun.txt', 'The Sun is a G-type main-sequence star at the center of the Solar System.'),
+    upload(tokenA, 'mars.txt', 'Mars is the fourth planet from the Sun and is known as the red planet.'),
+  ]);
+  await Promise.all([waitReady(tokenA, a.body.id), waitReady(tokenA, b.body.id)]);
+
+  // Both documents' content must be retrievable afterwards.
+  const q1 = await chat(tokenA, 'What type of star is the Sun?');
+  assert.ok(q1.citations.some((c) => c.original_name === 'sun.txt'), 'sun.txt vectors survived');
+  const q2 = await chat(tokenA, 'Which planet is known as the red planet?');
+  assert.ok(q2.citations.some((c) => c.original_name === 'mars.txt'), 'mars.txt vectors survived');
+});
