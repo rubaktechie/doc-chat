@@ -1,0 +1,28 @@
+# Dependencies
+node_modules
+dist/
+backend/python/.venv/
+
+__pycache__
+
+# Runtime data (SQLite DB, FAISS indexes, uploads)
+data/
+backend/data/
+*.db
+*.db-shm
+*.db-wal
+*.faiss
+*.faiss.meta.json
+
+# Secrets & env
+.env
+.env.local
+.env.docker
+
+# Build output
+dist/
+
+# Logs / OS
+*.log
+.DS_Store
+Thumbs.db
