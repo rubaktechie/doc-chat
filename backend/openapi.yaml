@@ -1,0 +1,431 @@
+openapi: 3.0.3
+info:
+  title: Chat With Your Docs — Backend API
+  version: 1.0.0
+  description: |
+    Multi-user RAG portal. Users sign up, upload documents into their own
+    private collection, and ask questions answered **only from their documents**
+    with inline citations.
+
+    All endpoints are served under the `/api` prefix. Requests and responses are
+    JSON (`application/json`) unless noted:
+      - `POST /api/documents` accepts `multipart/form-data`.
+      - `POST /api/chat` responds with a `text/event-stream` (Server-Sent Events).
+
+    Authentication is a JWT Bearer token (7-day expiry) obtained from
+    `/api/auth/signup` or `/api/auth/login`. The documents, chat, and settings
+    routes require it; health, status, and auth are open. Every response carries
+    an `x-request-id` header.
+servers:
+  - url: http://localhost:3001
+    description: Local dev (backend directly)
+  - url: http://localhost:8080
+    description: Docker (nginx proxies /api to the backend)
+
+tags:
+  - name: Auth
+    description: Signup and login
+  - name: Documents
+    description: Upload, list, and delete documents in the caller's collection
+  - name: Chat
+    description: Ask grounded questions (streamed answer + citations)
+  - name: Settings
+    description: Per-user provider and model selection
+  - name: System
+    description: Health and operational status (open, no auth)
+
+paths:
+  /api/health:
+    get:
+      tags: [System]
+      operationId: healthCheck
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+
+  /api/status:
+    get:
+      tags: [System]
+      operationId: getStatus
+      summary: Operational snapshot
+      description: Row counts, configured providers, and uptime. Open so it can double as a readiness/metrics probe.
+      security: []
+      responses:
+        '200':
+          description: Current status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/auth/signup:
+    post:
+      tags: [Auth]
+      operationId: signup
+      summary: Create an account and receive a token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+            example: { email: user@example.com, password: hunter2 }
+      responses:
+        '201':
+          description: Account created; token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Missing email/password or password shorter than 6 characters
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: An account with that email already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Log in and receive a token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Authenticated; token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Email and password are required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/documents:
+    get:
+      tags: [Documents]
+      operationId: listDocuments
+      summary: List the caller's documents
+      responses:
+        '200':
+          description: Documents owned by the caller, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items: { $ref: '#/components/schemas/Document' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Documents]
+      operationId: uploadDocument
+      summary: Upload a document
+      description: |
+        Saves the file and returns immediately with `status: processing`. The
+        server then extracts text (markitdown), chunks + embeds it, and adds the
+        vectors to the caller's FAISS index asynchronously. Poll `GET /api/documents`
+        until the document reports `ready` (or `error`). Max upload size is 25 MB.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Accepted; processing started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, example: 42 }
+                  status: { type: string, enum: [processing] }
+                  original_name: { type: string, example: report.pdf }
+        '400':
+          description: No file uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Upload rejected (e.g. file exceeds the 25 MB limit) or a server error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/documents/{id}:
+    delete:
+      tags: [Documents]
+      operationId: deleteDocument
+      summary: Delete a document
+      description: Removes the document, its uploaded file, its chunk rows (cascade), and its vectors from the FAISS index.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Document not found (or not owned by the caller)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/chat:
+    post:
+      tags: [Chat]
+      operationId: chat
+      summary: Ask a question (streamed answer + citations)
+      description: |
+        Retrieves the top-k matching chunks from the caller's index, builds a
+        grounded prompt, and streams the answer as **Server-Sent Events**
+        (`text/event-stream`). Event sequence:
+
+          - `event: token`  — `data: {"text": "..."}` — an answer delta (repeated)
+          - `event: citations` — `data: {"citations": [...]}` — source list (once, near the end)
+          - `event: done`   — `data: {}` — stream complete
+          - `event: error`  — `data: {"error": "..."}` — emitted instead if generation fails
+
+        If nothing relevant is found, a single `token` event carries a
+        "couldn't find it" message and `citations` is an empty array.
+        See `ChatCitation` for the citation object shape.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, example: When did Apollo 11 land on the Moon? }
+      responses:
+        '200':
+          description: Server-Sent Events stream of the answer
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: A sequence of SSE `event:`/`data:` frames (see endpoint description).
+          # Per-event payload schemas (SSE is not natively modeled by OpenAPI).
+          x-sse-events:
+            token:
+              schema:
+                type: object
+                properties:
+                  text: { type: string }
+            citations:
+              schema:
+                type: object
+                properties:
+                  citations:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChatCitation' }
+            done:
+              schema:
+                type: object
+            error:
+              schema: { $ref: '#/components/schemas/Error' }
+        '400':
+          description: A question is required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: Get the caller's effective settings and available providers
+      responses:
+        '200':
+          description: Resolved settings plus the provider catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: '#/components/schemas/Settings' }
+                  providers:
+                    type: object
+                    additionalProperties: { $ref: '#/components/schemas/ProviderInfo' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Settings]
+      operationId: updateSettings
+      summary: Update the caller's provider/model selection
+      description: All fields are optional; omitted or null fields fall back to the provider profile defaults.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider: { type: string, description: Provider profile name (must be a known provider), example: openai }
+                chat_model: { type: string, nullable: true, example: gpt-4o-mini }
+                embed_model: { type: string, nullable: true, example: text-embedding-3-small }
+      responses:
+        '200':
+          description: Updated, resolved settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: '#/components/schemas/Settings' }
+        '400':
+          description: Unknown provider
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or expired token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6, description: At least 6 characters (enforced on signup) }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        email: { type: string, format: email }
+
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string, description: JWT Bearer token (7-day expiry) }
+        user: { $ref: '#/components/schemas/User' }
+
+    Document:
+      type: object
+      properties:
+        id: { type: integer }
+        original_name: { type: string, example: report.pdf }
+        status:
+          type: string
+          enum: [processing, ready, error]
+        chunk_count: { type: integer, nullable: true }
+        embed_model: { type: string, nullable: true, example: text-embedding-3-small }
+        error: { type: string, nullable: true, description: Failure reason when status is error }
+        created_at: { type: string, example: '2026-07-03 12:00:00' }
+
+    ChatCitation:
+      type: object
+      description: One cited source document, sent in the `citations` SSE event. Chunks from the same document are collapsed into a single citation.
+      properties:
+        n: { type: integer, description: 'Citation number matching [n] in the answer (one per document)', example: 1 }
+        document_id: { type: integer }
+        original_name: { type: string }
+        score: { type: number, format: float, description: Cosine similarity of the document's best-matching chunk }
+        snippet: { type: string, description: Preview of the best-matching chunk (truncated to ~320 chars) }
+
+    Settings:
+      type: object
+      properties:
+        provider: { type: string, example: openai }
+        chat_model: { type: string, example: gpt-4o-mini }
+        embed_model: { type: string, example: text-embedding-3-small }
+
+    ProviderInfo:
+      type: object
+      description: A selectable provider profile and its defaults.
+      properties:
+        baseURL: { type: string, example: https://api.openai.com/v1 }
+        chatModel: { type: string, example: gpt-4o-mini }
+        embedModel: { type: string, example: text-embedding-3-small }
+        hasKey: { type: boolean, description: Whether an API key is configured server-side for this provider }
+
+    StatusResponse:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+        uptime_s: { type: integer, example: 1234 }
+        counts:
+          type: object
+          properties:
+            users: { type: integer }
+            documents: { type: integer }
+            documents_ready: { type: integer }
+            chunks: { type: integer }
+        default_provider: { type: string, example: openai }
+        providers:
+          type: array
+          items: { type: string }
+          example: [openai, local]
+
+security:
+  - bearerAuth: []
