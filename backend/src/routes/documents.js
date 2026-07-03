@@ -8,6 +8,8 @@ import { runPython } from '../services/python.js';
 import { indexPathFor } from '../services/retrieval.js';
 import { chunkText } from '../services/chunk.js';
 import { embedTexts } from '../services/embeddings.js';
+import { enqueue } from '../services/queue.js';
+import { checkBudget, recordUsage } from '../services/usage.js';
 import { logger } from '../logger.js';
 import db from '../db.js';
 
@@ -36,11 +38,16 @@ async function processDocument(userId, docId, filePath, cfg) {
     const pieces = chunkText(text);
 
     // 2. Embed the chunks, then hand the vectors to FAISS (it assigns ids).
-    const vectors = await embedTexts(cfg, pieces);
-    const { faiss_ids: faissIds = [] } = await runPython(
-      'add.py',
-      ['--index', indexPathFor(userId, cfg.embedModel), '--embed-model', cfg.embedModel],
-      { input: JSON.stringify({ vectors }) },
+    // The add runs on the user's queue: add.py rewrites the whole index file,
+    // so concurrent uploads must not interleave.
+    const { vectors, tokens } = await embedTexts(cfg, pieces);
+    recordUsage(userId, tokens);
+    const { faiss_ids: faissIds = [] } = await enqueue(String(userId), () =>
+      runPython(
+        'add.py',
+        ['--index', indexPathFor(userId, cfg.embedModel), '--embed-model', cfg.embedModel],
+        { input: JSON.stringify({ vectors }) },
+      ),
     );
 
     const chunks = pieces.map((text, i) => ({ faiss_id: faissIds[i], chunk_index: i, text }));
@@ -69,6 +76,10 @@ async function processDocument(userId, docId, filePath, cfg) {
 
 router.post('/', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!checkBudget(req.userId).allowed) {
+    fs.rm(req.file.path, { force: true }, () => {});
+    return res.status(429).json({ error: 'Hourly token limit reached — try again later.' });
+  }
   const cfg = getResolvedProvider(req.userId);
   const info = db
     .prepare(
@@ -92,6 +103,55 @@ router.get('/', (req, res) => {
   res.json({ documents: docs });
 });
 
+// Re-run ingestion for a document that failed processing (including ones
+// marked failed after a server restart interrupted them).
+router.post('/:id/retry', async (req, res) => {
+  const doc = db
+    .prepare('SELECT * FROM documents WHERE id = ? AND user_id = ?')
+    .get(req.params.id, req.userId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (doc.status !== 'error') {
+    return res.status(400).json({ error: 'Only failed documents can be retried' });
+  }
+  if (!checkBudget(req.userId).allowed) {
+    return res.status(429).json({ error: 'Hourly token limit reached — try again later.' });
+  }
+
+  const filePath = path.join(UPLOADS_DIR, String(req.userId), doc.stored_name);
+  if (!fs.existsSync(filePath)) {
+    return res.status(409).json({ error: 'The original file is no longer on disk — delete and upload it again.' });
+  }
+
+  // Clear any partial state left by the failed attempt (vectors first, then
+  // rows). Best effort on the index: ingest re-adds under fresh ids anyway.
+  try {
+    if (doc.embed_model) {
+      const faissIds = db
+        .prepare('SELECT faiss_id FROM chunks WHERE document_id = ? AND user_id = ?')
+        .all(doc.id, req.userId)
+        .map((r) => r.faiss_id);
+      if (faissIds.length > 0) {
+        await enqueue(String(req.userId), () =>
+          runPython(
+            'remove.py',
+            ['--index', indexPathFor(req.userId, doc.embed_model), '--ids', faissIds.join(',')],
+          ),
+        );
+      }
+    }
+  } catch (err) {
+    req.log?.error({ docId: doc.id, err: err.message }, 'FAISS cleanup failed before retry');
+  }
+  db.prepare('DELETE FROM chunks WHERE document_id = ? AND user_id = ?').run(doc.id, req.userId);
+  db.prepare(
+    "UPDATE documents SET status = 'processing', error = NULL, chunk_count = 0 WHERE id = ?",
+  ).run(doc.id);
+
+  const cfg = getResolvedProvider(req.userId);
+  processDocument(req.userId, doc.id, filePath, cfg);
+  return res.status(202).json({ id: doc.id, status: 'processing', original_name: doc.original_name });
+});
+
 router.delete('/:id', async (req, res) => {
   const doc = db
     .prepare('SELECT * FROM documents WHERE id = ? AND user_id = ?')
@@ -107,9 +167,11 @@ router.delete('/:id', async (req, res) => {
         .all(doc.id, req.userId)
         .map((r) => r.faiss_id);
       if (faissIds.length > 0) {
-        await runPython(
-          'remove.py',
-          ['--index', indexPathFor(req.userId, doc.embed_model), '--ids', faissIds.join(',')],
+        await enqueue(String(req.userId), () =>
+          runPython(
+            'remove.py',
+            ['--index', indexPathFor(req.userId, doc.embed_model), '--ids', faissIds.join(',')],
+          ),
         );
       }
     }

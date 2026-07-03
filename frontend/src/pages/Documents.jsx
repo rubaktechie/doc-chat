@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast.jsx';
 
 const STATUS_LABEL = { processing: '⏳ Processing', ready: '✅ Ready', error: '⚠️ Error' };
 const ACCEPT = '.pdf,.txt,.md,.docx,.pptx,.html,.csv,.xlsx';
+const MAX_UPLOAD_MB = 25; // must match the server's multer limit
 
 export default function Documents() {
   const [docs, setDocs] = useState([]);
@@ -33,6 +34,11 @@ export default function Documents() {
 
   const uploadFile = async (file) => {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      toast(`"${file.name}" is larger than the ${MAX_UPLOAD_MB} MB limit`);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
     setUploading(true);
     try {
       await api.uploadDocument(file);
@@ -63,6 +69,16 @@ export default function Documents() {
     }
   };
 
+  const onRetry = async (id, name) => {
+    try {
+      await api.retryDocument(id);
+      toast(`Retrying "${name}" — processing…`, 'info');
+      await load();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
   return (
     <div className="page">
       <h1>Documents</h1>
@@ -87,7 +103,7 @@ export default function Documents() {
           <span>
             <strong>Drag &amp; drop</strong> a document here, or <u>click to browse</u>
             <br />
-            <span className="muted small">PDF, DOCX, PPTX, XLSX, HTML, CSV, Markdown, TXT</span>
+            <span className="muted small">PDF, DOCX, PPTX, XLSX, HTML, CSV, Markdown, TXT · max {MAX_UPLOAD_MB} MB</span>
           </span>
         )}
       </div>
@@ -109,7 +125,12 @@ export default function Documents() {
               <td title={d.error || ''} className={`status-${d.status}`}>{STATUS_LABEL[d.status] || d.status}</td>
               <td>{d.chunk_count}</td>
               <td className="muted">{d.embed_model || '—'}</td>
-              <td><button className="link-btn danger" onClick={() => onDelete(d.id, d.original_name)}>Delete</button></td>
+              <td>
+                {d.status === 'error' && (
+                  <button className="link-btn" onClick={() => onRetry(d.id, d.original_name)}>Retry</button>
+                )}
+                <button className="link-btn danger" onClick={() => onDelete(d.id, d.original_name)}>Delete</button>
+              </td>
             </tr>
           ))}
         </tbody>

@@ -22,6 +22,12 @@ export const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-
 export const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
 export const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'openai';
 
+// Abuse / cost controls. Auth endpoints are limited per IP; LLM + embedding
+// token spend is capped per user per hour (0 disables the cap).
+export const AUTH_RATE_WINDOW_MS = parseInt(process.env.AUTH_RATE_WINDOW_MS || String(15 * 60 * 1000), 10);
+export const AUTH_RATE_MAX = parseInt(process.env.AUTH_RATE_MAX || '20', 10);
+export const TOKEN_LIMIT_PER_HOUR = parseInt(process.env.TOKEN_LIMIT_PER_HOUR || '100000', 10);
+
 // Provider profiles. Both providers speak the OpenAI-compatible API; we only
 // swap baseURL / apiKey / model names. "local" points at Ollama or llama.cpp.
 export const PROVIDERS = {

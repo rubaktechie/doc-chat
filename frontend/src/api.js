@@ -42,6 +42,7 @@ export const api = {
     return request('/documents', { method: 'POST', form });
   },
   deleteDocument: (id) => request(`/documents/${id}`, { method: 'DELETE' }),
+  retryDocument: (id) => request(`/documents/${id}/retry`, { method: 'POST' }),
   getSettings: () => request('/settings'),
   updateSettings: (s) => request('/settings', { method: 'PUT', body: s }),
 };
@@ -59,7 +60,8 @@ export async function streamChat(question, { onToken, onCitations, onError, onDo
     return;
   }
   if (!res.ok || !res.body) {
-    onError?.(`Request failed (${res.status})`);
+    const data = await res.json().catch(() => ({}));
+    onError?.(data.error || `Request failed (${res.status})`);
     return;
   }
   const reader = res.body.getReader();

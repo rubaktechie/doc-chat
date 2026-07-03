@@ -199,3 +199,23 @@ test('concurrent uploads do not lose vectors (per-user queue)', async () => {
   const q2 = await chat(tokenA, 'Which planet is known as the red planet?');
   assert.ok(q2.citations.some((c) => c.original_name === 'mars.txt'), 'mars.txt vectors survived');
 });
+
+test('retry is rejected for documents that are not failed', async () => {
+  const { body } = await jget('/api/documents', tokenA);
+  const ready = body.documents.find((d) => d.status === 'ready');
+  const res = await fetch(base + `/api/documents/${ready.id}/retry`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenA}` },
+  });
+  assert.equal(res.status, 400);
+});
+
+// Keep last: it exhausts the shared per-IP auth limiter.
+test('auth endpoints are rate limited', async () => {
+  let limited = false;
+  for (let i = 0; i < 30 && !limited; i++) {
+    const { status } = await jpost('/api/auth/login', { email: 'a@test.com', password: 'wrong' });
+    if (status === 429) limited = true;
+  }
+  assert.ok(limited, 'expected a 429 within 30 attempts');
+});

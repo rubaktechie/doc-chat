@@ -96,6 +96,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /api/auth/login:
     post:
@@ -126,6 +128,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /api/documents:
     get:
@@ -183,11 +187,60 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '500':
-          description: Upload rejected (e.g. file exceeds the 25 MB limit) or a server error
+        '413':
+          description: File exceeds the 25 MB upload limit
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/documents/{id}/retry:
+    post:
+      tags: [Documents]
+      operationId: retryDocument
+      summary: Retry a failed document ingestion
+      description: |
+        Re-runs ingestion for a document whose status is `error` (including
+        documents marked failed after a server restart interrupted processing).
+        Any partial state from the failed attempt (chunk rows, vectors) is
+        cleared first. Returns `202` and processing restarts; poll
+        `GET /api/documents` for the outcome.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '202':
+          description: Accepted; re-processing started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  status: { type: string, enum: [processing] }
+                  original_name: { type: string }
+        '400':
+          description: Document is not in the error state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Document not found (or not owned by the caller)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: The original file is no longer on disk
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /api/documents/{id}:
     delete:
@@ -278,6 +331,8 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /api/settings:
     get:
@@ -340,6 +395,11 @@ components:
   responses:
     Unauthorized:
       description: Missing, invalid, or expired token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Rate limit or hourly token budget exceeded
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

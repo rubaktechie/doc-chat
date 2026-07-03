@@ -3,6 +3,8 @@ import db from '../db.js';
 import { INDEXES_DIR } from '../config.js';
 import { runPython } from './python.js';
 import { embedTexts } from './embeddings.js';
+import { enqueue } from './queue.js';
+import { recordUsage } from './usage.js';
 
 // Index files are keyed by (user, embed model) so switching embedding models is
 // non-destructive: each model gets its own fixed-dimension index.
@@ -17,11 +19,16 @@ export function indexPathFor(userId, embedModel) {
 // Embed the question, search the active model's FAISS index, and hydrate the
 // matching chunks with their text and source document name. Returns [] if none.
 export async function retrieveContexts(userId, question, cfg, k = 5) {
-  const [vector] = await embedTexts(cfg, [question]);
-  const result = await runPython(
-    'query.py',
-    ['--index', indexPathFor(userId, cfg.embedModel), '--k', String(k)],
-    { input: JSON.stringify({ vector }) },
+  const { vectors: [vector], tokens } = await embedTexts(cfg, [question]);
+  recordUsage(userId, tokens);
+  // Reads share the user's queue too: on Windows the atomic index rename in
+  // add.py/remove.py fails if a reader has the file open mid-swap.
+  const result = await enqueue(String(userId), () =>
+    runPython(
+      'query.py',
+      ['--index', indexPathFor(userId, cfg.embedModel), '--k', String(k)],
+      { input: JSON.stringify({ vector }) },
+    ),
   );
   const results = result.results || [];
   if (results.length === 0) return [];

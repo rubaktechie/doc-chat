@@ -36,8 +36,13 @@ def load_meta(index_path):
 
 
 def save_meta(index_path, meta):
-    with open(meta_path_for(index_path), "w", encoding="utf-8") as f:
+    # Write-to-temp + atomic rename: a crash mid-write must never leave a
+    # truncated meta file behind.
+    p = meta_path_for(index_path)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(meta, f)
+    os.replace(tmp, p)
 
 
 def load_or_create_index(index_path, dim):
@@ -81,7 +86,11 @@ def main():
     start_id = int(meta.get("next_id", 1))
     ids = np.arange(start_id, start_id + len(vectors), dtype="int64")
     index.add_with_ids(arr, ids)
-    faiss.write_index(index, args.index)
+    # Same write-to-temp + atomic rename for the index itself: readers either
+    # see the old complete index or the new one, never a partial file.
+    tmp = args.index + ".tmp"
+    faiss.write_index(index, tmp)
+    os.replace(tmp, args.index)
 
     meta["next_id"] = start_id + len(vectors)
     meta["dim"] = dim

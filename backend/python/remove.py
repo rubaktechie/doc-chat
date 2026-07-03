@@ -31,7 +31,10 @@ def main():
 
     index = faiss.read_index(args.index)
     removed = index.remove_ids(np.array(ids, dtype="int64"))
-    faiss.write_index(index, args.index)
+    # Write-to-temp + atomic rename so readers never see a partial index.
+    tmp = args.index + ".tmp"
+    faiss.write_index(index, tmp)
+    os.replace(tmp, args.index)
     print(json.dumps({"ok": True, "removed": int(removed)}))
 
 

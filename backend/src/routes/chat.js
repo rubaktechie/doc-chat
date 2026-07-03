@@ -2,6 +2,7 @@ import express from 'express';
 import { getResolvedProvider } from './settings.js';
 import { retrieveContexts } from '../services/retrieval.js';
 import { streamAnswer } from '../services/llm.js';
+import { checkBudget, recordUsage } from '../services/usage.js';
 
 const router = express.Router();
 
@@ -27,6 +28,11 @@ function groupByDocument(contexts) {
 router.post('/', async (req, res) => {
   const question = (req.body?.question || '').trim();
   if (!question) return res.status(400).json({ error: 'A question is required' });
+  // Enforce the hourly token budget before any provider call (and before SSE
+  // headers, so the client gets a plain 429).
+  if (!checkBudget(req.userId).allowed) {
+    return res.status(429).json({ error: 'Hourly token limit reached — try again later.' });
+  }
 
   const cfg = getResolvedProvider(req.userId);
 
@@ -69,6 +75,7 @@ router.post('/', async (req, res) => {
     const t1 = performance.now();
     const { usage } = await streamAnswer(cfg, question, sources, (text) => send('token', { text }));
     const llmMs = Math.round(performance.now() - t1);
+    recordUsage(req.userId, usage?.total_tokens || 0);
 
     send('citations', { citations });
     send('done', {});
