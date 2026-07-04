@@ -17,7 +17,6 @@ function CitationLink({ href, children, ...props }) {
       e.preventDefault();
       const target = document.getElementById(href.slice(1));
       if (!target) return;
-      target.open = true;
       target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       target.classList.remove('cite-flash');
       // Reflow so re-clicking the same citation restarts the flash animation.

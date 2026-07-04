@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-"Chat with Docs" — a RAG portal where authenticated users upload documents and ask questions answered strictly from their own collection, streamed with citations. See `README.md` for the full requirements/assumptions/key-decisions/guardrails write-up; that document is the source of truth for *why* things are built this way and should be consulted (and updated) alongside any architectural change.
+"Chat with Docs" — a RAG portal where authenticated users upload documents and ask questions answered strictly from their own collection, streamed with citations. See `README.md` for the full requirements/assumptions/key-decisions/guardrails write-up; that document is the source of truth for *why* things are built this way and should be consulted (and updated) alongside any architectural change. `ARCHITECTURE.md` holds the system/flow diagrams (mermaid) and should be updated too when flows or storage change. UI screenshots live in `screenshots/` and are embedded in the README — regenerate them (Playwright, both themes) after visible UI changes.
 
 ## Commands
 

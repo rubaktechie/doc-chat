@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 
-const STATUS_LABEL = { processing: '⏳ Processing', ready: '✅ Ready', error: '⚠️ Error' };
+// Status is conveyed by a colored dot (CSS ::before on .status-*) + label.
+const STATUS_LABEL = { processing: 'Processing', ready: 'Ready', error: 'Error' };
 const ACCEPT = '.pdf,.txt,.md,.docx,.pptx,.html,.csv,.xlsx';
 const MAX_UPLOAD_MB = 25; // must match the server's multer limit
 const POLL_MS = 2500;
@@ -13,10 +15,9 @@ export default function Documents() {
   const [uploadProgress, setUploadProgress] = useState(null); // { done, total }
   const [dragging, setDragging] = useState(false);
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' });
-  const [confirmingId, setConfirmingId] = useState(null);
+  const [confirmDoc, setConfirmDoc] = useState(null); // { id, name }
   const fileRef = useRef(null);
   const pollRef = useRef(null);
-  const confirmTimerRef = useRef(null);
   const toast = useToast();
 
   // Poll only while something is processing; stop once everything settles.
@@ -43,10 +44,7 @@ export default function Documents() {
   useEffect(() => {
     load();
     startPolling();
-    return () => {
-      clearInterval(pollRef.current);
-      clearTimeout(confirmTimerRef.current);
-    };
+    return () => clearInterval(pollRef.current);
   }, []);
 
   const uploadFiles = async (fileList) => {
@@ -91,16 +89,9 @@ export default function Documents() {
     uploadFiles(e.dataTransfer.files);
   };
 
-  // Two-step inline delete: first click arms, second click (within 3 s) deletes.
-  const onDeleteClick = async (id, name) => {
-    if (confirmingId !== id) {
-      setConfirmingId(id);
-      clearTimeout(confirmTimerRef.current);
-      confirmTimerRef.current = setTimeout(() => setConfirmingId(null), 3000);
-      return;
-    }
-    clearTimeout(confirmTimerRef.current);
-    setConfirmingId(null);
+  // Delete goes through the confirmation modal (see ConfirmDialog below).
+  const doDelete = async ({ id, name }) => {
+    setConfirmDoc(null);
     try {
       await api.deleteDocument(id);
       toast(`Deleted "${name}"`, 'info');
@@ -207,10 +198,10 @@ export default function Documents() {
                     <button className="link-btn" onClick={() => onRetry(d.id, d.original_name)}>Retry</button>
                   )}
                   <button
-                    className={`link-btn danger ${confirmingId === d.id ? 'confirming' : ''}`}
-                    onClick={() => onDeleteClick(d.id, d.original_name)}
+                    className="link-btn danger"
+                    onClick={() => setConfirmDoc({ id: d.id, name: d.original_name })}
                   >
-                    {confirmingId === d.id ? 'Confirm?' : 'Delete'}
+                    Delete
                   </button>
                 </td>
               </tr>
@@ -218,6 +209,15 @@ export default function Documents() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(confirmDoc)}
+        title="Delete this document?"
+        message={`"${confirmDoc?.name}" and its indexed content will be removed. This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => doDelete(confirmDoc)}
+        onCancel={() => setConfirmDoc(null)}
+      />
     </div>
   );
 }

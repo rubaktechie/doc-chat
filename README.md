@@ -2,6 +2,8 @@
 - Title : Chat with Docs.
 - Desc : Build a system that answers questions about content from a document collection (PDFs, text files, or any format you choose). This is the same classic RAG use-case you might be familiar with.
 
+> **Architecture:** see [ARCHITECTURE.md](ARCHITECTURE.md) for the system overview, ingest/chat flow diagrams, storage layout, and concurrency model. **Screenshots:** [below](#screenshots).
+
 # Assumptions : 
 - You have a collection of documents that you want to query. 
 - Document collection can be in any format (PDFs, text files, etc.) and can be of any size.
@@ -36,6 +38,17 @@
 - Prompt injection from uploaded documents is mitigated (not eliminated — no prompt-level defense is): excerpts are wrapped in delimiters the document text cannot fake or close (delimiter look-alikes are neutralized, filenames flattened to one line), and the system prompt declares everything inside them untrusted data whose embedded instructions must be ignored. Containment is covered by structural tests.
 - Abuse & cost controls: login/signup are rate-limited per IP, and each user has an hourly LLM + embedding token budget (configurable; enforced before any provider call with a 429). Documents are capped at 25 MB per upload, enforced server-side and surfaced in the UI.
 
+
+# Screenshots
+
+| | Light | Dark |
+|---|---|---|
+| **Sign in / sign up** | ![Login (light)](screenshots/login-light.png) | ![Login (dark)](screenshots/login-dark.png) |
+| **Documents** | ![Documents (light)](screenshots/documents-light.png) | ![Documents (dark)](screenshots/documents-dark.png) |
+| **Chat — empty state** | ![Chat empty state (light)](screenshots/chat-empty-state-light.png) | ![Chat empty state (dark)](screenshots/chat-empty-state-dark.png) |
+| **Chat — answer with citations** | ![Chat answer (light)](screenshots/chat-answer-light.png) | ![Chat answer (dark)](screenshots/chat-answer-dark.png) |
+| **Settings** | ![Settings (light)](screenshots/settings-light.png) | ![Settings (dark)](screenshots/settings-dark.png) |
+| **Mobile chat** | ![Mobile chat (light)](screenshots/mobile-chat-light.png) | ![Mobile chat (dark)](screenshots/mobile-chat-dark.png) |
 
 # Future Enhancements:
 - Remove the 25 MB per-document limit: streaming ingestion for arbitrarily large files (embedding already runs in batches; extraction and FAISS writes would need to stream/append instead of loading whole documents)

@@ -12,11 +12,14 @@ export function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
 }
 
+export function setTheme(theme) {
+  localStorage.setItem(THEME_KEY, theme);
+  applyTheme(theme);
+  return theme;
+}
+
 export function toggleTheme() {
-  const next = getTheme() === 'light' ? 'dark' : 'light';
-  localStorage.setItem(THEME_KEY, next);
-  applyTheme(next);
-  return next;
+  return setTheme(getTheme() === 'light' ? 'dark' : 'light');
 }
 
 // Apply on import so there's no flash of the wrong theme before React mounts.

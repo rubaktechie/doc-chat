@@ -46,7 +46,8 @@ body {
   color: var(--text);
 }
 
-.app { min-height: 100vh; display: flex; flex-direction: column; }
+.app { height: 100vh; display: flex; flex-direction: column; }
+.shell { flex: 1; display: flex; min-height: 0; }
 
 /* Soft scrollbars */
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
@@ -54,23 +55,71 @@ body {
 *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* Navbar: floating soft bar */
-.navbar {
-  position: sticky; top: 0; z-index: 40;
-  display: flex; align-items: center; justify-content: space-between;
+/* Top bar: just the brand and the theme switch (nav lives in the sidebar). */
+.topbar {
+  position: relative; z-index: 40; flex-shrink: 0;
+  display: flex; align-items: center; gap: 0.75rem;
   padding: 0.8rem 1.5rem; background: var(--bg);
   box-shadow: 0 6px 16px var(--sh-dark);
 }
-.brand { font-weight: 700; letter-spacing: 0.01em; }
-.nav-links { display: flex; gap: 0.4rem; align-items: center; }
+.brand { font-weight: 700; letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 0.5rem; }
+.brand-icon { color: var(--accent); }
+.theme-btn { margin-left: auto; }
+
+/* Inline SVG icons inherit currentColor (theme-aware by construction). */
+.icon { flex-shrink: 0; vertical-align: -0.18em; }
+button .icon, .nav-link .icon { pointer-events: none; }
+
+/* Theme switch: both options visible, active segment highlighted */
+.theme-switch {
+  display: inline-flex; gap: 0.25rem; padding: 0.25rem;
+  border-radius: 999px; box-shadow: var(--inset-sm);
+}
+.theme-switch button {
+  display: inline-flex; align-items: center; background: none; box-shadow: none;
+  color: var(--muted); padding: 0.35rem 0.65rem; border-radius: 999px;
+  transition: color 0.15s, background 0.15s;
+}
+.theme-switch button:hover:not(.active) { color: var(--text); filter: none; }
+.theme-switch button:active { transform: none; box-shadow: none; }
+.theme-switch button.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white; box-shadow: var(--raise-sm);
+}
+
+/* Theme switch floats top-right on the auth screen */
+.auth-theme-switch { position: fixed; top: 1rem; right: 1rem; z-index: 10; }
+
+/* App sidebar: brand + close on top, conversations, nav pinned at the bottom. */
+.sidebar {
+  width: 264px; flex-shrink: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 0.9rem;
+  padding: 1.1rem 1rem; background: var(--bg);
+  box-shadow: 6px 0 16px var(--sh-dark);
+}
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.sidebar-head .brand { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-backdrop { display: none; }
+
+/* Pinned to the bottom of the sidebar: conv-list grows, margin-top backstops
+   the case where the list is empty. */
+.sidebar-nav { margin-top: auto; display: flex; flex-direction: column; gap: 0.3rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
 .nav-link {
-  color: var(--muted); text-decoration: none; padding: 0.45rem 0.9rem;
-  border-radius: 12px; transition: color 0.15s, box-shadow 0.15s;
+  display: flex; align-items: center; gap: 0.6rem;
+  color: var(--muted); text-decoration: none; padding: 0.55rem 0.9rem;
+  border-radius: 12px; transition: color 0.15s, box-shadow 0.15s; font-weight: 500;
 }
 .nav-link:hover { color: var(--text); }
 .nav-link.active { color: var(--accent); box-shadow: var(--inset-sm); font-weight: 600; }
+.logout-btn {
+  background: none; box-shadow: none; text-align: left; cursor: pointer;
+  border: none; font: inherit; font-weight: 500; color: var(--muted);
+}
+.logout-btn:hover:not(:disabled) { color: var(--danger); filter: none; }
+.logout-btn:active:not(:disabled) { transform: none; box-shadow: none; }
 
-.content { flex: 1; padding: 1.75rem 1.5rem; max-width: 960px; width: 100%; margin: 0 auto; }
+.content { flex: 1; min-width: 0; overflow-y: auto; padding: 1.75rem 1.5rem; display: flex; flex-direction: column; }
+.page { width: 100%; max-width: 900px; margin: 0 auto; }
 .page h1 { margin-top: 0; font-weight: 700; }
 
 /* Inputs are carved in; buttons are raised out. */
@@ -80,6 +129,7 @@ input, select, textarea {
   border-radius: 12px; padding: 0.65rem 0.85rem; box-shadow: var(--inset-sm);
 }
 input::placeholder, textarea::placeholder { color: var(--muted); }
+input:disabled, select:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* Keyboard focus */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
@@ -114,12 +164,39 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 /* Auth */
 .auth-card {
-  max-width: 380px; margin: 4rem auto; background: var(--bg);
+  width: 100%; max-width: 400px; margin: 4rem auto; background: var(--bg);
   border-radius: 24px; padding: 2.25rem; box-shadow: var(--raise);
 }
-.auth-card h1 { margin-top: 0; }
+.auth-brand { font-weight: 700; margin-bottom: 1.4rem; color: var(--text); display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.auth-card h1 { margin: 0 0 1.1rem; font-size: 1.3rem; }
 .auth-card form, .settings-form { display: flex; flex-direction: column; gap: 1.1rem; }
 .auth-card label, .settings-form label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.9rem; color: var(--muted); }
+
+/* Sliding login/signup segmented toggle */
+.auth-tabs {
+  position: relative; display: flex; border-radius: 999px;
+  box-shadow: var(--inset-sm); padding: 0.3rem; margin-bottom: 1.5rem;
+}
+.auth-tab {
+  flex: 1; position: relative; z-index: 1; background: none; box-shadow: none;
+  color: var(--muted); font-weight: 600; padding: 0.5rem 0; border-radius: 999px;
+  transition: color 0.2s;
+}
+.auth-tab:hover:not(:disabled) { filter: none; color: var(--text); }
+.auth-tab:active:not(:disabled) { transform: none; box-shadow: none; }
+.auth-tab.active { color: white; }
+.auth-tab-indicator {
+  position: absolute; top: 0.3rem; bottom: 0.3rem; left: 0.3rem;
+  width: calc(50% - 0.3rem); border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: var(--raise-sm); transition: transform 0.25s ease;
+}
+.auth-tab-indicator.signup { transform: translateX(100%); }
+
+/* Confirm-password field slides open when switching to sign-up */
+.confirm-field { max-height: 0; opacity: 0; overflow: hidden; transition: max-height 0.3s ease, opacity 0.25s ease; }
+.confirm-field.show { max-height: 100px; opacity: 1; }
+.auth-submit { width: 100%; }
 
 /* Settings */
 .settings-form {
@@ -147,9 +224,16 @@ button:disabled { opacity: 0.45; cursor: default; }
 .doc-error { margin-top: 0.25rem; max-width: 420px; }
 .row-actions { white-space: nowrap; }
 .row-actions .link-btn + .link-btn { margin-left: 0.5rem; }
-.link-btn.confirming { font-weight: 700; text-decoration: underline; }
+/* Status: monochrome dot + label, colored by state */
 .status-error { color: var(--danger); }
 .status-ready { color: var(--ok); }
+.status-processing { color: var(--muted); }
+.status-error::before, .status-ready::before, .status-processing::before {
+  content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor; margin-right: 0.45rem; vertical-align: 0.05em;
+}
+.status-processing::before { animation: pulse-dot 1.2s ease-in-out infinite; }
+@keyframes pulse-dot { 50% { opacity: 0.35; } }
 
 /* Loading skeletons */
 .skeleton { display: block; height: 1rem; border-radius: 8px;
@@ -166,19 +250,17 @@ button:disabled { opacity: 0.45; cursor: default; }
 @keyframes slide-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Chat */
-.chat-page { display: flex; flex-direction: column; height: calc(100vh - 150px); }
-.chat-layout { display: flex; gap: 1.25rem; flex: 1; min-height: 0; }
-.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .chat-header { display: flex; align-items: baseline; gap: 0.75rem; min-width: 0; }
 .chat-header h1 { margin: 0; }
 .chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
-.sidebar-toggle { display: none; font-size: 1.15rem; }
 
 /* Document scope picker */
 .scope-picker { margin-left: auto; position: relative; flex-shrink: 0; }
 .scope-btn {
   background: var(--bg); color: var(--muted); font-weight: 500; font-size: 0.85rem;
   border-radius: 999px; padding: 0.45rem 0.95rem; box-shadow: var(--raise-sm);
+  display: inline-flex; align-items: center; gap: 0.4rem;
 }
 .scope-btn:hover:not(:disabled) { color: var(--accent); filter: none; }
 .scope-backdrop { position: fixed; inset: 0; z-index: 20; }
@@ -198,10 +280,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .scope-divider { height: 1px; background: var(--border); margin: 0.35rem 0.25rem; }
 .scope-empty { padding: 0.3rem 0.5rem; margin: 0; }
 
-/* Conversation sidebar */
-.chat-sidebar { width: 230px; flex-shrink: 0; display: flex; flex-direction: column; gap: 0.9rem; min-height: 0; }
-.new-chat-btn { width: 100%; }
-.conv-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; min-height: 0; padding: 0.25rem 0.25rem 0.5rem; }
+/* Conversation list (inside the app sidebar) */
+.new-chat-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
+.conv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; min-height: 0; padding: 0.25rem 0.25rem 0.5rem; }
 .conv-item {
   display: flex; align-items: center; gap: 0.25rem; border-radius: 14px;
   padding: 0.2rem 0.45rem; box-shadow: var(--raise-sm); transition: box-shadow 0.15s;
@@ -209,11 +290,19 @@ button:disabled { opacity: 0.45; cursor: default; }
 .conv-item.active { box-shadow: var(--inset-sm); }
 .conv-item .icon-btn { visibility: hidden; }
 .conv-item:hover .icon-btn, .conv-item.active .icon-btn { visibility: visible; }
+/* Touch screens have no hover — keep the delete affordance always visible. */
+@media (hover: none) {
+  .conv-item .icon-btn { visibility: visible; }
+}
 .conv-title {
   flex: 1; min-width: 0; background: none; border: none; color: var(--muted); text-align: left;
-  padding: 0.5rem 0.3rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0.5rem 0.3rem; cursor: pointer;
   box-shadow: none; font-weight: 500;
+  display: flex; align-items: center; gap: 0.5rem;
 }
+.conv-icon { color: var(--muted); opacity: 0.8; }
+.conv-item.active .conv-icon { color: var(--accent); opacity: 1; }
+.conv-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-title:active { transform: none; box-shadow: none; }
 .conv-item.active .conv-title { color: var(--accent); }
 .conv-title:hover { color: var(--text); }
@@ -233,6 +322,12 @@ button:disabled { opacity: 0.45; cursor: default; }
   border-radius: 999px; padding: 0.5rem 1rem; box-shadow: var(--raise-sm);
 }
 .suggestion-chip:hover:not(:disabled) { color: var(--accent); filter: none; }
+.upload-hint-link {
+  display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 1rem; padding: 0.6rem 1.2rem;
+  border-radius: 999px; box-shadow: var(--raise-sm); text-decoration: none;
+  color: var(--accent); font-weight: 600; font-size: 0.9rem;
+}
+.upload-hint-link:hover { box-shadow: var(--inset-sm); }
 
 .msg { display: flex; gap: 0.6rem; align-items: flex-end; }
 .msg.user { flex-direction: row-reverse; }
@@ -282,17 +377,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 @keyframes cite-pulse { 0% { box-shadow: var(--inset-sm), 0 0 0 3px var(--accent); } 100% { box-shadow: var(--inset-sm); } }
 .cite-flash { animation: cite-pulse 1.2s ease-out; }
 
-/* Citations under an answer */
-.citations { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; }
+/* Citations under an answer: a plain source list (inline [n] links scroll here) */
+.citations { margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.45rem; }
 .cite {
-  font-size: 0.78rem; color: var(--muted); background: var(--bg);
-  box-shadow: var(--inset-sm); border-radius: 10px; padding: 0.4rem 0.65rem;
+  font-size: 0.78rem; color: var(--muted); background: var(--bg); font-weight: 500;
+  box-shadow: var(--inset-sm); border-radius: 999px; padding: 0.35rem 0.75rem;
 }
-.cite summary { cursor: pointer; list-style: none; font-weight: 500; }
-.cite summary::-webkit-details-marker { display: none; }
-.cite summary::before { content: '▸ '; color: var(--accent); }
-.cite[open] summary::before { content: '▾ '; }
-.cite-snippet { margin: 0.5rem 0 0.2rem; color: var(--text); font-size: 0.8rem; line-height: 1.45; white-space: pre-wrap; }
 
 /* Composer: soft bar with carved textarea */
 .composer {
@@ -302,22 +392,55 @@ button:disabled { opacity: 0.45; cursor: default; }
 .composer textarea { flex: 1; resize: none; max-height: 140px; line-height: 1.45; }
 .stop-btn { background: linear-gradient(135deg, var(--danger), #c0392b); }
 
+/* Confirmation modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 110; padding: 1rem;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  animation: fade-in 0.15s ease-out;
+}
+.modal {
+  width: 100%; max-width: 400px; background: var(--bg);
+  border-radius: 20px; padding: 1.5rem 1.75rem;
+  box-shadow: var(--raise), 0 18px 48px var(--sh-dark);
+  animation: pop-in 0.18s ease-out;
+}
+.modal h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
+.modal p { margin: 0 0 1.25rem; overflow-wrap: break-word; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
+.modal-cancel { background: var(--bg); color: var(--muted); box-shadow: var(--raise-sm); }
+.modal-cancel:hover:not(:disabled) { color: var(--text); filter: none; }
+.modal-danger { background: linear-gradient(135deg, var(--danger), #c0392b); }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { transform: scale(0.95); opacity: 0; } }
+
+/* Desktop: the topbar carries the brand and the sidebar is permanent — its
+   own header (brand + close) is a mobile-overlay affordance only. */
+@media (min-width: 701px) {
+  .sidebar-head { display: none; }
+  .sidebar:not(.open) { display: none; }
+}
+
 /* Responsive (small screens) */
 @media (max-width: 700px) {
   .content { padding: 1rem 0.85rem; }
-  .navbar { flex-wrap: wrap; gap: 0.5rem; padding: 0.6rem 0.85rem; }
-  .nav-links { gap: 0.15rem; }
+  .topbar { padding: 0.6rem 0.85rem; }
   .bubble { max-width: 88%; }
   .avatar { display: none; }
-  .chat-page { height: calc(100vh - 175px); }
 
-  /* Sidebar becomes a slide-over panel toggled from the chat header. */
-  .sidebar-toggle { display: inline-block; }
-  .chat-sidebar {
-    position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
-    width: 270px; padding: 1.1rem; background: var(--bg);
-    box-shadow: 10px 0 30px var(--sh-dark);
+  /* Sidebar becomes a slide-over panel; the ☰ in the topbar opens it. */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 60;
+    width: 280px; box-shadow: 10px 0 30px var(--sh-dark);
     transform: translateX(-105%); transition: transform 0.2s ease-out;
   }
-  .chat-sidebar.open { transform: none; }
+  .sidebar.open { transform: none; }
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 55;
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  /* Auth card centers vertically on small screens (flex auto margins inside
+     .content; they collapse gracefully if the card overflows the viewport). */
+  .auth-card { margin: auto; padding: 1.6rem 1.4rem; }
 }

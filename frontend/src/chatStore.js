@@ -6,6 +6,17 @@ import { getToken } from './api.js';
 // most recently updated first.
 const MAX_CONVERSATIONS = 50;
 
+// Change subscription so the app-wide sidebar can re-render its conversation
+// list when a chat is saved or deleted from anywhere.
+const listeners = new Set();
+function emit() {
+  for (const fn of listeners) fn();
+}
+export function onChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 function storageKey() {
   let userId = 'anon';
   try {
@@ -63,10 +74,12 @@ export function saveConversation(id, messages) {
     all.push({ id, title, updatedAt: Date.now(), messages });
   }
   writeAll(all);
+  emit();
 }
 
 export function deleteConversation(id) {
   writeAll(readAll().filter((c) => c.id !== id));
+  emit();
 }
 
 export function newConversationId() {
