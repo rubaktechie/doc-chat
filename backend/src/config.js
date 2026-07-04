@@ -19,7 +19,16 @@ export const DB_PATH = path.join(DATA_DIR, 'docchat.db');
 
 export const PORT = parseInt(process.env.PORT || '3001', 10);
 export const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
-export const PYTHON_BIN = process.env.PYTHON_BIN || 'python';
+// A PYTHON_BIN containing a path separator is resolved relative to ROOT: Node's
+// spawn() resolves relative executable paths against process.cwd(), not the
+// `cwd` option we pass to spawn, so a bare relative path like
+// "python/.venv/bin/python" would only work if the server happened to be
+// launched from inside backend/. A bare command name (e.g. "python") is left
+// as-is to resolve via PATH.
+const rawPythonBin = process.env.PYTHON_BIN || 'python';
+export const PYTHON_BIN = rawPythonBin.includes(path.sep) || rawPythonBin.includes('/')
+  ? path.resolve(ROOT, rawPythonBin)
+  : rawPythonBin;
 export const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'openai';
 
 // Abuse / cost controls. Auth endpoints are limited per IP; LLM + embedding
