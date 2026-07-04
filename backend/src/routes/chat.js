@@ -1,4 +1,5 @@
 import express from 'express';
+import db from '../db.js';
 import { getResolvedProvider } from './settings.js';
 import { retrieveContexts } from '../services/retrieval.js';
 import { streamAnswer } from '../services/llm.js';
@@ -28,6 +29,27 @@ function groupByDocument(contexts) {
 router.post('/', async (req, res) => {
   const question = (req.body?.question || '').trim();
   if (!question) return res.status(400).json({ error: 'A question is required' });
+  // Optional scope: restrict retrieval to specific documents. Ownership is
+  // enforced here so forged ids can't leak another user's chunks (the chunk
+  // query filters by user_id too — this just fails fast with a clear error).
+  let documentIds;
+  if (req.body?.document_ids !== undefined) {
+    const raw = req.body.document_ids;
+    if (!Array.isArray(raw) || raw.some((id) => !Number.isInteger(id))) {
+      return res.status(400).json({ error: 'document_ids must be an array of integers' });
+    }
+    if (raw.length > 0) {
+      const placeholders = raw.map(() => '?').join(',');
+      const owned = db
+        .prepare(`SELECT id FROM documents WHERE user_id = ? AND id IN (${placeholders})`)
+        .all(req.userId, ...raw)
+        .map((r) => r.id);
+      if (owned.length !== new Set(raw).size) {
+        return res.status(400).json({ error: 'Unknown document in document_ids' });
+      }
+      documentIds = owned;
+    }
+  }
   // Enforce the hourly token budget before any provider call (and before SSE
   // headers, so the client gets a plain 429).
   if (!checkBudget(req.userId).allowed) {
@@ -47,12 +69,16 @@ router.post('/', async (req, res) => {
 
   try {
     const t0 = performance.now();
-    const contexts = await retrieveContexts(req.userId, question, cfg, 5);
+    const contexts = await retrieveContexts(req.userId, question, cfg, 5, { documentIds });
     const retrieveMs = Math.round(performance.now() - t0);
 
     if (contexts.length === 0) {
-      req.log?.info({ provider: cfg.provider, retrieveMs, hits: 0 }, 'chat: no matching context');
-      send('token', { text: 'I could not find anything relevant in your documents. Try uploading more, or rephrasing the question.' });
+      req.log?.info({ provider: cfg.provider, retrieveMs, hits: 0, scoped: Boolean(documentIds) }, 'chat: no matching context');
+      send('token', {
+        text: documentIds
+          ? 'I could not find anything relevant in the selected documents. Try widening the selection or rephrasing the question.'
+          : 'I could not find anything relevant in your documents. Try uploading more, or rephrasing the question.',
+      });
       send('citations', { citations: [] });
       send('done', {});
       return res.end();

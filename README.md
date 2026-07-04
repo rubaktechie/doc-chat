@@ -1,5 +1,5 @@
 # Requirement
-- Title : Chat With Your Docs.
+- Title : Chat with Docs.
 - Desc : Build a system that answers questions about content from a document collection (PDFs, text files, or any format you choose). This is the same classic RAG use-case you might be familiar with.
 
 # Assumptions : 

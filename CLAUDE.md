@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-"Chat With Your Docs" — a RAG portal where authenticated users upload documents and ask questions answered strictly from their own collection, streamed with citations. See `README.md` for the full requirements/assumptions/key-decisions/guardrails write-up; that document is the source of truth for *why* things are built this way and should be consulted (and updated) alongside any architectural change.
+"Chat with Docs" — a RAG portal where authenticated users upload documents and ask questions answered strictly from their own collection, streamed with citations. See `README.md` for the full requirements/assumptions/key-decisions/guardrails write-up; that document is the source of truth for *why* things are built this way and should be consulted (and updated) alongside any architectural change.
 
 ## Commands
 
@@ -44,7 +44,7 @@ Docker (repo root): `cp .env.docker.example .env.docker` (fill in provider keys)
 
 **Ingest is async:** `POST /api/documents` returns `202 processing` immediately; `processDocument()` in `backend/src/routes/documents.js` runs extract → chunk (Node, `services/chunk.js`) → embed (Node) → add-to-FAISS (Python, queued) → insert chunk rows → mark `ready`/`error`, and the client polls `GET /api/documents`. A document still `processing` at server startup means a prior process died mid-ingest — `app.js` marks those `error` on boot so clients aren't left polling forever. `/:id/retry` re-runs ingestion, best-effort cleaning up any partial FAISS vectors first.
 
-**Chat (`backend/src/routes/chat.js`)** streams over SSE (not WebSockets): embed question → `retrieveContexts` → if zero hits, respond directly without calling the LLM (grounding is enforced, not just prompted) → group chunks by document → `streamAnswer` tokens → emit a `citations` event → `done`. One citation per source document, not per chunk.
+**Chat (`backend/src/routes/chat.js`)** streams over SSE (not WebSockets): embed question → `retrieveContexts` → if zero hits, respond directly without calling the LLM (grounding is enforced, not just prompted) → group chunks by document → `streamAnswer` tokens → emit a `citations` event → `done`. One citation per source document, not per chunk. An optional `document_ids` body field scopes retrieval to specific documents (ownership-validated in the route); the scoped chunk faiss ids are passed to `query.py` as an `allowed_ids` allow-list, which searches the full index and post-filters — the IDSelector search-params API isn't exposed in every faiss build, and the index is exact brute-force anyway so cost is identical.
 
 **Prompt-injection containment (`backend/src/services/llm.js`)** is structural, not just prompted: document excerpts are wrapped in `<excerpt n="..." from="...">` delimiters that document text cannot fake or close — `neutralizeDelimiters()` escapes any literal `<excerpt`/`</excerpt>` sequence found in the source text or filename before it's interpolated, and filenames are flattened to one line first. The system prompt then declares everything inside those markers untrusted data. Tested structurally in `test/llm.test.js` — verify delimiter escaping stays intact if this code changes, since that's what actually blocks the smuggling (the system prompt instruction alone would not).
 

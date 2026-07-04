@@ -18,7 +18,24 @@ export function indexPathFor(userId, embedModel) {
 
 // Embed the question, search the active model's FAISS index, and hydrate the
 // matching chunks with their text and source document name. Returns [] if none.
-export async function retrieveContexts(userId, question, cfg, k = 5) {
+// `documentIds` (optional) scopes the search to those documents: their chunks'
+// faiss ids are passed to query.py as an allow-list.
+export async function retrieveContexts(userId, question, cfg, k = 5, { documentIds } = {}) {
+  let allowedIds;
+  if (documentIds && documentIds.length > 0) {
+    const placeholders = documentIds.map(() => '?').join(',');
+    allowedIds = db
+      .prepare(
+        `SELECT c.faiss_id FROM chunks c JOIN documents d ON d.id = c.document_id
+         WHERE c.user_id = ? AND d.embed_model = ? AND c.document_id IN (${placeholders})`,
+      )
+      .all(userId, cfg.embedModel, ...documentIds)
+      .map((r) => r.faiss_id);
+    // None of the selected documents have chunks under the active embed model —
+    // nothing can match, so skip the embedding spend entirely.
+    if (allowedIds.length === 0) return [];
+  }
+
   const { vectors: [vector], tokens } = await embedTexts(cfg, [question]);
   recordUsage(userId, tokens);
   // Reads share the user's queue too: on Windows the atomic index rename in
@@ -27,7 +44,7 @@ export async function retrieveContexts(userId, question, cfg, k = 5) {
     runPython(
       'query.py',
       ['--index', indexPathFor(userId, cfg.embedModel), '--k', String(k)],
-      { input: JSON.stringify({ vector }) },
+      { input: JSON.stringify({ vector, allowed_ids: allowedIds }) },
     ),
   );
   const results = result.results || [];

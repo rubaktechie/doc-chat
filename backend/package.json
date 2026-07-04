@@ -1,7 +1,7 @@
 {
   "name": "doc-chat-backend",
   "version": "1.0.0",
-  "description": "Chat With Your Docs — Node/Express backend",
+  "description": "Chat with Docs — Node/Express backend",
   "type": "module",
   "main": "src/index.js",
   "scripts": {

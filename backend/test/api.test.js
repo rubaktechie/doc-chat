@@ -86,11 +86,11 @@ async function waitReady(token, id, timeoutMs = 20000) {
   }
   throw new Error('timeout waiting for document to be ready');
 }
-async function chat(token, question) {
+async function chat(token, question, documentIds) {
   const res = await fetch(base + '/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, ...(documentIds ? { document_ids: documentIds } : {}) }),
   });
   const text = await res.text();
   const out = { answer: '', citations: null };
@@ -198,6 +198,40 @@ test('concurrent uploads do not lose vectors (per-user queue)', async () => {
   assert.ok(q1.citations.some((c) => c.original_name === 'sun.txt'), 'sun.txt vectors survived');
   const q2 = await chat(tokenA, 'Which planet is known as the red planet?');
   assert.ok(q2.citations.some((c) => c.original_name === 'mars.txt'), 'mars.txt vectors survived');
+});
+
+test('chat scoped to specific documents only cites those documents', async () => {
+  const { body } = await jget('/api/documents', tokenA);
+  const sunDoc = body.documents.find((d) => d.original_name === 'sun.txt');
+  const marsDoc = body.documents.find((d) => d.original_name === 'mars.txt');
+
+  // Scoped to mars.txt: only mars.txt may be cited, even for a sun question.
+  const scoped = await chat(tokenA, 'What type of star is the Sun?', [marsDoc.id]);
+  assert.ok(scoped.citations.every((c) => c.original_name === 'mars.txt'),
+    `expected only mars.txt citations, got: ${scoped.citations.map((c) => c.original_name).join(', ')}`);
+
+  // Scoped to sun.txt: the sun question cites sun.txt.
+  const sun = await chat(tokenA, 'What type of star is the Sun?', [sunDoc.id]);
+  assert.ok(sun.citations.some((c) => c.original_name === 'sun.txt'));
+  assert.ok(sun.citations.every((c) => c.original_name === 'sun.txt'));
+});
+
+test('chat rejects malformed or foreign document_ids', async () => {
+  const { body } = await jget('/api/documents', tokenA);
+  const anyDoc = body.documents[0];
+
+  const notArray = await jpost('/api/chat', { question: 'q', document_ids: 'nope' }, tokenA);
+  assert.equal(notArray.status, 400);
+
+  const nonInt = await jpost('/api/chat', { question: 'q', document_ids: ['1'] }, tokenA);
+  assert.equal(nonInt.status, 400);
+
+  const unknown = await jpost('/api/chat', { question: 'q', document_ids: [999999] }, tokenA);
+  assert.equal(unknown.status, 400);
+
+  // Another user's document id must be rejected, not silently searched.
+  const foreign = await jpost('/api/chat', { question: 'q', document_ids: [anyDoc.id] }, tokenB);
+  assert.equal(foreign.status, 400);
 });
 
 test('retry is rejected for documents that are not failed', async () => {

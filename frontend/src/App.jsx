@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
+import { getTheme, toggleTheme } from './theme.js';
 import Login from './pages/Login.jsx';
 import Documents from './pages/Documents.jsx';
 import Chat from './pages/Chat.jsx';
@@ -8,16 +10,24 @@ import Settings from './pages/Settings.jsx';
 function NavBar() {
   const { logout } = useAuth();
   const { pathname } = useLocation();
+  const [theme, setTheme] = useState(getTheme());
   const link = (to, label) => (
     <Link to={to} className={pathname === to ? 'nav-link active' : 'nav-link'}>{label}</Link>
   );
   return (
     <nav className="navbar">
-      <span className="brand">📄 Chat With Your Docs</span>
+      <span className="brand">📄 Chat with Docs</span>
       <div className="nav-links">
         {link('/documents', 'Documents')}
         {link('/chat', 'Chat')}
         {link('/settings', 'Settings')}
+        <button
+          className="link-btn icon-btn"
+          aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+          onClick={() => setTheme(toggleTheme())}
+        >
+          {theme === 'light' ? '🌙' : '☀️'}
+        </button>
         <button className="link-btn" onClick={logout}>Log out</button>
       </div>
     </nav>
