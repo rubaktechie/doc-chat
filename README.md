@@ -54,7 +54,39 @@
 - Remove the 25 MB per-document limit: streaming ingestion for arbitrarily large files (embedding already runs in batches; extraction and FAISS writes would need to stream/append instead of loading whole documents)
 - Implement advanced search features (e.g., keyword search, filtering by document type)
 - Migrate to a more robust database system (e.g., PostgreSQL, MongoDB) for better scalability and performance
-- Persistent chats instead of ephemeral chats, allowing users to save and revisit previous conversations
+- Persistent chats allowing users to save and revisit previous conversations instead of local browser storage
 - Instead of HTTP Polling for document status, implement WebSockets for real-time communication between the frontend and backend
 - Add support for other LLM providers (e.g., Anthropic, Gemini,...) to give users more options for question answering and document embeddings
 - Retrieval quality evaluation: a small gold dataset (questions mapped to the documents that answer them) plus a harness reporting hit-rate@k / MRR / citation correctness, so chunking or embedding changes can be measured instead of guessed. A score threshold (relevance floor) would then be tuned from that data to drop weak matches instead of always returning top-k.
+
+
+# Scaling
+- Instead of local and openai minimal models for production we can go with AWS bedrock for inference and Automated ECS scaling tasks for servers
+- UI can be hosted with S3 + Cloudfront with Edge Server Caching
+- Replace with Aurora Mysql and Vector DB for production scale application instead of sqlite and faiss
+- Introduce Queues Pub/Sub for document status and chat completions
+
+# Usage of AI Tools
+- Defined deliverables in Readme and built increamentally with that as a initial requirement.
+- Most of the code is written with Claude Code with step by step instruction 
+- Provided claude.md with hand written instructions and rebuild entirely with claude code for better formatting
+- Every generated code is verified manually and application flow is tested for each iteration
+
+# Engineering Standards followed
+- Backend end-to-end tests before Integration
+- Structured logging
+- Containerization for backend and frontend
+- basic prompt injection tests
+- OpenApi Documentation for API testing
+
+# Engineering Standards excluded
+- CI/CD pipelines - can be build easily once infrastructure is finalized
+- Frontend tests - verified the flow with playwright for now using claude code
+- Have not opted for complex react implementations, followed basic code splitting
+- Typescript implementation for frontend and backend
+
+# Setup Instructions
+- [Frontend](./frontend/setup.md)
+- [Backend Node](./backend/setup.md)
+- [Backend Python](./backend/python/setup.md) 
+
